@@ -1,0 +1,8 @@
+.vscode
+*.docx
+*.model
+*.regress
+*.zip
+*.xlsx
+*.jpg
+*.csv
