@@ -1,22 +1,17 @@
-from datetime import datetime
-from tkinter import messagebox, filedialog
 import tkinter
-from customtkinter import (
-    CTk,
-    CTkFont,
-    CTkButton,
-    CTkFrame,
-    StringVar,
-    IntVar,
-    CTkOptionMenu,
-    CTkLabel
-)
+from datetime import datetime
+from tkinter import filedialog, messagebox
+
 import customtkinter
 import joblib
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from customtkinter import (
+    CTk, CTkButton, CTkFont, CTkFrame, CTkLabel,
+    CTkOptionMenu, IntVar, StringVar
+    )
 from pymongo import MongoClient
-import matplotlib.pyplot as plt
 
 customtkinter.set_appearance_mode("dark")
 customtkinter.set_default_color_theme("blue")
