@@ -8,9 +8,15 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from customtkinter import (
-    CTk, CTkButton, CTkFont, CTkFrame, CTkLabel,
-    CTkOptionMenu, IntVar, StringVar
-    )
+    CTk,
+    CTkButton,
+    CTkFont,
+    CTkFrame,
+    CTkLabel,
+    CTkOptionMenu,
+    IntVar,
+    StringVar
+)
 from pymongo import MongoClient
 
 customtkinter.set_appearance_mode("dark")
@@ -28,8 +34,9 @@ class Application(CTk):
     forecast_horizons : list[str]
         List of forecast horizons.
     data : pandas.DataFrame
-        Temp data storage.        
+        Temp data storage.
     """
+
     __filetypes = (("Книга Excel", "*.xlsx"),)
 
     __forecast_horizons = [
@@ -188,8 +195,9 @@ class Application(CTk):
         if not file_path:
             messagebox.showerror(" ", "Вы не выбрали Excel файл")
             return None
-        data: pd.DataFrame = pd.read_excel(file_path)
-        data = data.iloc[-24 * 7:]
+        data: pd.DataFrame = pd.read_excel(file_path, index_col=0)
+        data.index = data.index.round("H")
+        data = data.iloc[-24 * 7 :]
         return data
 
     @classmethod
@@ -224,8 +232,15 @@ class Application(CTk):
             data = collection.find(limit=24 * 7, sort=[("timestamp", -1)])
 
         data = pd.DataFrame(data).sort_values(by=["timestamp"])
-        data = data.drop(columns=["_id"]).reset_index(drop=True)
-        data.columns = ["Дата и время", "Электропотребление"]
+        data.rename(
+            columns={
+                "timestamp": "Дата и время",
+                "electricity_consumption": "Электропотребление"
+            },
+            inplace=True,
+        )
+        data.index = data["Дата и время"].dt.round("H")
+        data.drop(columns=["_id", "Дата и время"], inplace=True)
         return data
 
     def __get_predictions(self) -> None:
@@ -235,32 +250,20 @@ class Application(CTk):
         forecast_horizon: int = (
             self.__forecast_horizons.index(self.__days_combobox.get()) + 1
         )
-        last_available_day: pd.Series = self.__data.loc[-1:, "Дата и время"]
-        forecast_day_begin: str = (
-            (last_available_day + pd.DateOffset(days=1))
-            .dt.strftime(r"%Y/%m/%d")
-            .values[0]
-        )
-
+        last_available_day: pd.Series = self.__data.index[-1]
+        forecast_day_begin: pd.Timestamp = last_available_day + pd.DateOffset(days=1)
         prediction_range: pd.DatetimeIndex = pd.date_range(
             start=forecast_day_begin, periods=24 * forecast_horizon, freq="h"
         )
+        mask = self.__create_mask_fill_na(
+            self.__data["Электропотребление"].iloc[-24:], forecast_horizon
+        )
         prediction_data: pd.DataFrame = pd.DataFrame(
-            {
-                "Дата и время": prediction_range,
-                "Электропотребление": np.full(len(prediction_range), np.nan)
-            }
+            {"Электропотребление": mask.values}, index=prediction_range
         )
-        prediction_data["Электропотребление"].fillna(
-            self.__create_mask_fill_na(
-                self.__data["Электропотребление"].iloc[-24:], 
-                forecast_horizon
-                ),
-            inplace=True
-        )
-
-        X: pd.DataFrame = pd.concat([self.__data, prediction_data], ignore_index=True)
-        X: pd.DataFrame = self.__preprocessing_data(X)
+        prediction_data.index.name = "Дата и время"
+        X: pd.DataFrame = pd.concat([self.__data, prediction_data])
+        X = self.__preprocessing_data(X)
         model = joblib.load("regression.model")
         prediction_data["Электропотребление"] = np.round(model.predict(X), 3)
 
@@ -307,7 +310,7 @@ class Application(CTk):
         ----------
         `~pandas.Series`
         """
-        return pd.cut(data["Дата и время"].dt.hour, bins=4, labels=range(4))
+        return pd.cut(data.index.hour, bins=4, labels=range(4))
 
     @classmethod
     def __add_time_features(cls, data: pd.DataFrame) -> None:
@@ -326,16 +329,16 @@ class Application(CTk):
         data : pandas.DataFrame
             Input data.
         """
-        data["Час"] = data["Дата и время"].dt.hour.astype("category")
+        data["Час"] = data.index.hour.astype("category")
         data["Период времени суток"] = cls.__create_times_of_day(data).astype(
             "category"
         )
-        data["День недели"] = data["Дата и время"].dt.dayofweek.astype("category")
+        data["День недели"] = data.index.dayofweek.astype("category")
         data["Выходной"] = (
             data["День недели"].isin([5, 6]).astype("int").astype("category")
         )
-        data["Месяц"] = data["Дата и время"].dt.month.astype("category")
-        data["День в году"] = data["Дата и время"].dt.dayofyear
+        data["Месяц"] = data.index.month.astype("category")
+        data["День в году"] = data.index.dayofyear
 
     @staticmethod
     def __add_lag_features(data: pd.DataFrame) -> None:
@@ -369,11 +372,10 @@ class Application(CTk):
         ----------
         `~pandas.DataFrame`
         """
-        data["Дата и время"] = data["Дата и время"].dt.round("H")
         cls.__add_time_features(data)
         cls.__add_lag_features(data)
         data.dropna(inplace=True)
-        data.drop(columns=["Дата и время", "Электропотребление"], inplace=True)
+        data.drop(columns=["Электропотребление"], inplace=True)
         return data
 
     def __visualization(self) -> None:
@@ -381,9 +383,7 @@ class Application(CTk):
         Visualizes data using a plot.
         """
         _, ax = plt.subplots(figsize=(12, 6))
-        ax.plot(
-            self.__data["Дата и время"], self.__data["Электропотребление"], marker="o"
-        )
+        ax.plot(self.__data["Электропотребление"], marker="o")
         ax.set_title(
             f"Прогноз {self.__days_combobox.get().lower()} вперёд", fontsize=18
         )
@@ -397,7 +397,7 @@ class Application(CTk):
         """
         Save the data to a MongoDB database.
         """
-        data = self.__data.to_dict("records")
+        data = self.__data.copy().reset_index().to_dict("records")
         result = [
             {
                 "metadata": {"report_date": datetime.now()},
@@ -425,7 +425,7 @@ class Application(CTk):
             filetypes=self.__filetypes,
             defaultextension=".xlsx"
         )
-        self.__data.to_excel(filename, sheet_name="Лист1", index=False)
+        self.__data.to_excel(filename, sheet_name="Лист1")
         messagebox.showinfo(" ", f"Прогнозы успешно записаны в {filename}")
 
     def __close_app(self) -> None:
