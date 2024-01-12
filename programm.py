@@ -226,10 +226,12 @@ class Application(CTk):
         ----------
         `~pandas.DataFrame`: Загруженные данные из MongoDB.
         """
-        with MongoClient(serverSelectionTimeoutMS=1000) as client:
+        client = MongoClient(serverSelectionTimeoutMS=1000) 
+        with client:
             db = client["rosseti"]
             collection = db["electricity_consumption"]
             data = collection.find(limit=24 * 7, sort=[("timestamp", -1)])
+        client.close()
 
         data = pd.DataFrame(data).sort_values(by=["timestamp"])
         data.rename(
@@ -237,7 +239,7 @@ class Application(CTk):
                 "timestamp": "Дата и время",
                 "electricity_consumption": "Электропотребление"
             },
-            inplace=True,
+            inplace=True
         )
         data.index = data["Дата и время"].dt.round("H")
         data.drop(columns=["_id", "Дата и время"], inplace=True)
@@ -406,12 +408,13 @@ class Application(CTk):
             }
             for element in data
         ]
-
-        with MongoClient(serverSelectionTimeoutMS=1000) as client:
+        client = MongoClient(serverSelectionTimeoutMS=1000)
+        with client:
             db = client["rosseti"]
             collection = db["reports"]
             collection.insert_many(result)
-
+        client.close()
+        
         messagebox.showinfo(" ", "Прогнозы успешно записаны в БД")
 
     def __save_to_excel(self) -> None:
