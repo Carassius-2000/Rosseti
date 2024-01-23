@@ -37,9 +37,9 @@ class Application(CTk):
         Temp data storage.
     """
 
-    __filetypes = (("Книга Excel", "*.xlsx"),)
+    __filetypes: tuple[tuple[str, str]] = (("Книга Excel", "*.xlsx"),)
 
-    __forecast_horizons = [
+    __forecast_horizons: list[str] = [
         "На один день",
         "На два дня",
         "На три дня",
