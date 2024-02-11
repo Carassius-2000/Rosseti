@@ -181,7 +181,7 @@ class Application(CTk):
             self.__days_combobox.configure(state=tkinter.NORMAL)
             self.__get_predictions_button.configure(state=tkinter.NORMAL)
             messagebox.showinfo("Информация", "Данные успешно загружены.")
-
+    
     @classmethod
     def __load_from_excel(cls) -> pd.DataFrame:
         """
@@ -422,12 +422,15 @@ class Application(CTk):
         Save data to an Excel file.
         Opens a file dialog to allow the user to choose a file name and location for saving data.
         """
-        filename: str = filedialog.asksaveasfilename(
+        file_path: str = filedialog.asksaveasfilename(
             title="Сохранить файл",
             initialdir="/",
             filetypes=self.__filetypes,
             defaultextension=".xlsx"
         )
+        if not file_path:
+            messagebox.showerror(" ", "Вы не выбрали путь для сохранения Excel файла")
+            return None
         self.__data.to_excel(filename, sheet_name="Лист1")
         messagebox.showinfo(" ", f"Прогнозы успешно записаны в {filename}")
 
