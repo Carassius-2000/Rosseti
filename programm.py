@@ -384,16 +384,8 @@ class Application(CTk):
         """
         Visualizes data using a plot.
         """
-        _, ax = plt.subplots(figsize=(12, 6))
-        ax.plot(self.__data["Электропотребление"], marker="o")
-        ax.set_title(
-            f"Прогноз {self.__days_combobox.get().lower()} вперёд", fontsize=18
-        )
-        ax.tick_params(axis="both", labelsize=18)
-        ax.set_xlabel("Дата и время", fontsize=18)
-        ax.set_ylabel("Потребление электроэнергии (МВт * ч)", fontsize=18)
-        ax.grid(axis="y")
-        plt.show()
+        drawer = Drawer(self.__data)
+        drawer.line_plot(horizon_size=self.__days_combobox.get().lower())
 
     def __save_to_db(self) -> None:
         """
@@ -443,6 +435,40 @@ class Application(CTk):
         """
         if messagebox.askyesno("Выход из приложения", "Хотите выйти из приложения?"):
             self.destroy()
+
+
+class Drawer():
+    def __init__(self, data: pd.Series):
+        """
+        Initialize the Drawer class.
+
+        Parameters
+        ----------
+        data : 
+            Data for plotting.
+        """
+        self.__data = data
+    
+    def line_plot(self, horizon_size: str, plot_size: tuple[int, int]=(12, 6), font_size: int=18) -> None:
+        """
+        Visualizes data using a line plot.
+
+        Parameters
+        ----------
+        horizon_size : str
+        plot_size : tuple[int, int]
+        font_size : int
+        """
+        _, ax = plt.subplots(figsize=plot_size)
+        ax.plot(self.__data, marker="o")
+        ax.set_title(
+            f"Прогноз {horizon_size} вперёд", fontsize=font_size
+        )
+        ax.tick_params(axis="both", labelsize=font_size)
+        ax.set_xlabel("Дата и время", fontsize=font_size)
+        ax.set_ylabel("Потребление электроэнергии (МВт * ч)", fontsize=font_size)
+        ax.grid(axis="y")
+        plt.show()
 
 
 if __name__ == "__main__":
