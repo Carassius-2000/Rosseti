@@ -65,6 +65,7 @@ class Application(CTk):
         self.toplevel_window = None
 
         self.__data = None
+        self.__mongo_client = None
 
         self.grid_columnconfigure((1, 2, 3), weight=0)
         self.grid_rowconfigure((0, 1, 2), weight=1)
@@ -217,8 +218,7 @@ class Application(CTk):
         )
         return file_path
 
-    @staticmethod
-    def __load_from_db() -> pd.DataFrame:
+    def __load_from_db(self) -> pd.DataFrame:
         """
         Get data from MongoDB
 
@@ -226,12 +226,11 @@ class Application(CTk):
         ----------
         `~pandas.DataFrame`: Загруженные данные из MongoDB.
         """
-        client = MongoClient(serverSelectionTimeoutMS=1000) 
-        with client:
-            db = client["rosseti"]
-            collection = db["electricity_consumption"]
-            data = collection.find(limit=24 * 7, sort=[("timestamp", -1)])
-        client.close()
+        self.__mongo_client = MongoDBDriver()
+        data = self.__mongo_client.load_data(
+            db_name="rosseti", 
+            collection_name="electricity_consumption"
+        )
 
         data = pd.DataFrame(data).sort_values(by=["timestamp"])
         data.rename(
@@ -391,22 +390,20 @@ class Application(CTk):
         """
         Save the data to a MongoDB database.
         """
-        data = self.__data.copy().reset_index().to_dict("records")
-        result = [
+        data_to_save = self.__data.copy().reset_index().to_dict("records")
+        data_to_save = [
             {
                 "metadata": {"report_date": datetime.now()},
                 "electricity_consumption": element["Электропотребление"],
                 "timestamp": element["Дата и время"]
             }
-            for element in data
+            for element in data_to_save
         ]
-        client = MongoClient(serverSelectionTimeoutMS=1000)
-        with client:
-            db = client["rosseti"]
-            collection = db["reports"]
-            collection.insert_many(result)
-        client.close()
-        
+        self.__mongo_client.save_data(
+            data=data_to_save,
+            db_name="rosseti", 
+            collection_name="reports"
+        )
         messagebox.showinfo(" ", "Прогнозы успешно записаны в БД")
 
     def __save_to_excel(self) -> None:
@@ -449,7 +446,10 @@ class Drawer():
         """
         self.__data = data
     
-    def line_plot(self, horizon_size: str, plot_size: tuple[int, int]=(12, 6), font_size: int=18) -> None:
+    def line_plot(
+        self, 
+        horizon_size: str, plot_size: tuple[int, int]=(12, 6), 
+        font_size: int=18) -> None:
         """
         Visualizes data using a line plot.
 
@@ -470,6 +470,52 @@ class Drawer():
         ax.grid(axis="y")
         plt.show()
 
+
+class MongoDBDriver():
+    def __init__(self):
+        """Initialize the MongoDBDriver class."""
+        self.__connection = MongoClient(
+            serverSelectionTimeoutMS=1_000, 
+            maxPoolSize=None,
+            waitQueueTimeoutMS=1_000
+        )
+    
+    def load_data(self, db_name: str, collection_name: str):
+        """
+        Load data from database collection.
+        
+        Parameters
+        ----------
+            db_name : str
+                Name of database.
+            collection_name: str 
+                Name of collection within database.
+
+        Returns:
+        ----------
+        `~pymongo.cursor.Cursor`
+        """
+        db = self.__connection[db_name]
+        collection = db[collection_name]
+        data = collection.find(limit=24 * 7, sort=[("timestamp", -1)])
+        return data
+
+    def save_data(self, db_name: str, collection_name: str, data: pd.DataFrame) -> None:
+        """
+        Save data to database and collection using the provided DataFrame.
+        
+        Parameters
+        ----------
+            db_name : str
+                Name of database to save data to.
+            collection_name: str
+                Name of collection within database to save data to.
+            data : pd.DataFrame
+                DataFrame containing data to be saved.
+        """
+        db = self.__connection[db_name]
+        collection = db[collection_name]
+        collection.insert_many(data)
 
 if __name__ == "__main__":
     root = Application()
