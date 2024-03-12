@@ -195,10 +195,9 @@ class Application(CTk):
         file_path: str = cls.__fetch_file_path()
         if not file_path:
             messagebox.showerror(" ", "Вы не выбрали Excel файл")
-            return None
+            return
         data: pd.DataFrame = pd.read_excel(file_path, index_col=0)
-        data.index = data.index.round("H")
-        data = data.iloc[-24 * 7 :]
+        data = DataProcessor().postprocess_data_from_excel(data)
         return data
 
     @classmethod
@@ -212,7 +211,6 @@ class Application(CTk):
         """
         file_path: str = filedialog.askopenfilename(
             title="Открыть файл",
-            initialdir="/",
             filetypes=cls.__filetypes,
             defaultextension=".xlsx"
         )
@@ -231,17 +229,7 @@ class Application(CTk):
             db_name="rosseti", 
             collection_name="electricity_consumption"
         )
-
-        data = pd.DataFrame(data).sort_values(by=["timestamp"])
-        data.rename(
-            columns={
-                "timestamp": "Дата и время",
-                "electricity_consumption": "Электропотребление"
-            },
-            inplace=True
-        )
-        data.index = data["Дата и время"].dt.round("H")
-        data.drop(columns=["_id", "Дата и время"], inplace=True)
+        data = DataProcessor().after_load_from_db(data)
         return data
 
     def __get_predictions(self) -> None:
@@ -251,20 +239,11 @@ class Application(CTk):
         forecast_horizon: int = (
             self.__forecast_horizons.index(self.__days_combobox.get()) + 1
         )
-        last_available_day: pd.Series = self.__data.index[-1]
-        forecast_day_begin: pd.Timestamp = last_available_day + pd.DateOffset(days=1)
-        prediction_range: pd.DatetimeIndex = pd.date_range(
-            start=forecast_day_begin, periods=24 * forecast_horizon, freq="h"
+        future_dataframe = DataProcessor().make_future_dataframe(
+            forecast_horizon, self.__data
         )
-        mask = self.__create_mask_fill_na(
-            self.__data["Электропотребление"].iloc[-24:], forecast_horizon
-        )
-        prediction_data: pd.DataFrame = pd.DataFrame(
-            {"Электропотребление": mask.values}, index=prediction_range
-        )
-        prediction_data.index.name = "Дата и время"
-        X: pd.DataFrame = pd.concat([self.__data, prediction_data])
-        X = self.__preprocessing_data(X)
+        X = pd.concat([self.__data, future_dataframe])
+        X = DataProcessor().preprocessing_data(X)
         model = joblib.load("regression.model")
         prediction_data["Электропотребление"] = np.round(model.predict(X), 3)
 
@@ -273,111 +252,6 @@ class Application(CTk):
         self.__save_to_excel_button.configure(state=tkinter.NORMAL)
         self.__data = prediction_data
         messagebox.showinfo("Информация", "Прогнозы успешно получены.")
-
-    @staticmethod
-    def __create_mask_fill_na(last_day: pd.DataFrame, num_days: int) -> pd.Series:
-        """
-        Creates a mask to fill missing values in a DataFrame with data from last available day.
-
-        Parameters
-        ----------
-        last_day : pandas.DataFrame
-            Input client data.
-        num_days : int
-            Number of days to fill missing values.
-
-        Returns:
-        ----------
-        `~pandas.Series`
-        """
-        return pd.concat([last_day for _ in range(num_days)], ignore_index=True)
-
-    @staticmethod
-    def __create_times_of_day(data: pd.DataFrame) -> pd.Series:
-        """
-        Creates a column for time of day.
-        Rows are grouped by hours.
-        - 0 (night) [0 - 5]
-        - 1 (morning) [6 - 11]
-        - 2 (lunch) [12 - 17]
-        - 3 (evening) [18 - 23]
-
-        Parameters
-        ----------
-        data : pandas.DataFrame
-            Input data.
-
-        Returns
-        ----------
-        `~pandas.Series`
-        """
-        return pd.cut(data.index.hour, bins=4, labels=range(4))
-
-    @classmethod
-    def __add_time_features(cls, data: pd.DataFrame) -> None:
-        """
-        Adds time-related features to input data.
-
-        - Hour [0 - 23]
-        - Time of Day [0 - 3]
-        - Day of the week [0 - 6]
-        - Weekend [0 - 1]
-        - Month [1 - 12]
-        - Day of the year [1 - 366]
-
-        Parameters
-        ----------
-        data : pandas.DataFrame
-            Input data.
-        """
-        data["Час"] = data.index.hour.astype("category")
-        data["Период времени суток"] = cls.__create_times_of_day(data).astype(
-            "category"
-        )
-        data["День недели"] = data.index.dayofweek.astype("category")
-        data["Выходной"] = (
-            data["День недели"].isin([5, 6]).astype("int").astype("category")
-        )
-        data["Месяц"] = data.index.month.astype("category")
-        data["День в году"] = data.index.dayofyear
-
-    @staticmethod
-    def __add_lag_features(data: pd.DataFrame) -> None:
-        """
-        Creates lag features related to target variable.
-
-        - Electricity consumption lag 1 day (time shift by 24 hours)
-        - Electricity consumption lag 7 days (time shift by 168 hours)
-
-        Parameters
-        ----------
-        data : pandas.DataFrame
-            Input data.
-        """
-        data["Электропотребление лаг 1 день"] = data["Электропотребление"].shift(24)
-        data["Электропотребление лаг 7 дней"] = data["Электропотребление"].shift(24 * 7)
-
-    @classmethod
-    def __preprocessing_data(cls, data: pd.DataFrame) -> pd.DataFrame:
-        """
-        Preprocesses given data by rounding "Date/Time" column to nearest hour,
-        adding time features, adding lag features, dropping rows with missing values, and returning
-        preprocessed data.
-
-        Parameters
-        ----------
-        data : pandas.DataFrame
-            Input data to be preprocessed.
-
-        Returns
-        ----------
-        `~pandas.DataFrame`
-        """
-        cls.__add_time_features(data)
-        cls.__add_lag_features(data)
-        data.dropna(inplace=True)
-        data.drop(columns=["Электропотребление"], inplace=True)
-        return data
 
     def __visualization(self) -> None:
         """
@@ -390,16 +264,8 @@ class Application(CTk):
         """
         Save the data to a MongoDB database.
         """
-        data_to_save = self.__data.copy().reset_index().to_dict("records")
-        data_to_save = [
-            {
-                "metadata": {"report_date": datetime.now()},
-                "electricity_consumption": element["Электропотребление"],
-                "timestamp": element["Дата и время"]
-            }
-            for element in data_to_save
-        ]
-        self.__mongo_client.save_data(
+        data_to_save = DataProcessor().postprocess_data_from_db(self.__data.copy())
+        self.__mongo_client.prepare_data_for_saving(
             data=data_to_save,
             db_name="rosseti", 
             collection_name="reports"
@@ -413,13 +279,12 @@ class Application(CTk):
         """
         file_path: str = filedialog.asksaveasfilename(
             title="Сохранить файл",
-            initialdir="/",
             filetypes=self.__filetypes,
             defaultextension=".xlsx"
         )
         if not file_path:
             messagebox.showerror(" ", "Вы не выбрали путь для сохранения Excel файла")
-            return None
+            return
         self.__data.to_excel(filename, sheet_name="Лист1")
         messagebox.showinfo(" ", f"Прогнозы успешно записаны в {filename}")
 
@@ -486,10 +351,10 @@ class MongoDBDriver():
         
         Parameters
         ----------
-            db_name : str
-                Name of database.
-            collection_name: str 
-                Name of collection within database.
+        db_name : str
+            Name of database.
+        collection_name: str 
+            Name of collection within database.
 
         Returns:
         ----------
@@ -506,17 +371,221 @@ class MongoDBDriver():
         
         Parameters
         ----------
-            db_name : str
-                Name of database to save data to.
-            collection_name: str
-                Name of collection within database to save data to.
-            data : pd.DataFrame
-                DataFrame containing data to be saved.
+        db_name : str
+            Name of database to save data to.
+        collection_name: str
+            Name of collection within database to save data to.
+        data : pd.DataFrame
+            DataFrame containing data to be saved.
         """
         db = self.__connection[db_name]
         collection = db[collection_name]
         collection.insert_many(data)
 
+class DataProcessor():
+    @staticmethod
+    def postprocess_data_from_excel(data) -> pd.DataFrame:
+        """
+        Postprocess data from Excel file.
+
+        Parameters
+        ----------
+        data : pandas.DataFrame
+            Input client data.
+
+        Returns
+        ----------
+        `~pandas.DataFrame`
+        """
+        data.index = data.index.round("H")
+        data = data.iloc[-24 * 7 :]
+        return data
+    
+    @staticmethod
+    def postprocess_data_from_db(data) -> pd.DataFrame:
+        """
+    	Postprocesses data retrieved from database.
+
+    	Parameters
+        ----------
+    	data : data retrieved from database.
+
+        Returns
+        ----------
+        `~pandas.DataFrame`
+    	"""
+        data = pd.DataFrame(data).sort_values(by=["timestamp"])
+        data.rename(
+            columns={
+                "timestamp": "Дата и время",
+                "electricity_consumption": "Электропотребление"
+            },
+            inplace=True
+        )
+        data.index = data["Дата и время"].dt.round("H")
+        data.drop(columns=["_id", "Дата и время"], inplace=True)
+        return data
+
+    @staticmethod
+    def __create_mask_fill_na(last_day: pd.DataFrame, num_days: int) -> pd.Series:
+        """
+        Creates a mask to fill missing values in a DataFrame with data from last available day.
+
+        Parameters
+        ----------
+        last_day : pandas.DataFrame
+            Input client data.
+        num_days : int
+            Number of days to fill missing values.
+
+        Returns:
+        ----------
+        `~pandas.Series`
+        """
+        return pd.concat([last_day for _ in range(num_days)], ignore_index=True)
+    
+    @classmethod
+    def make_future_dataframe(cls, forecast_horizon: int, data: pd.DataFrame) -> pd.DataFrame:
+        """
+        Generate a future dataframe for making predictions.
+
+        Parameters
+        ----------
+            forecast_horizon : int
+                Number of days to forecast into the future.
+            data : pd.DataFrame
+                Input data for generating future dataframe.
+
+        Returns
+        ----------
+        `~pandas.DataFrame`
+        """
+        last_available_day: pd.Series = data.index[-1]
+        forecast_day_begin: pd.Timestamp = last_available_day + pd.DateOffset(days=1)
+        prediction_range: pd.DatetimeIndex = pd.date_range(
+            start=forecast_day_begin, periods=24 * forecast_horizon, freq="h"
+        )
+        mask = cls.__create_mask_fill_na(
+            data["Электропотребление"].iloc[-24:], forecast_horizon
+        )
+        prediction_data = pd.DataFrame(
+            {"Электропотребление": mask.values}, index=prediction_range
+        )
+        prediction_data.index.name = "Дата и время"
+        return prediction_data
+        
+    @staticmethod
+    def __create_times_of_day(data: pd.DataFrame) -> pd.Series:
+        """
+        Creates a column for time of day.
+        Rows are grouped by hours.
+        - 0 (night) [0 - 5]
+        - 1 (morning) [6 - 11]
+        - 2 (lunch) [12 - 17]
+        - 3 (evening) [18 - 23]
+
+        Parameters
+        ----------
+        data : pandas.DataFrame
+            Input data.
+
+        Returns
+        ----------
+        `~pandas.Series`
+        """
+        return pd.cut(data.index.hour, bins=4, labels=range(4))
+
+    @classmethod
+    def __add_time_features(cls, data: pd.DataFrame) -> None:
+        """
+        Adds time-related features to input data.
+
+        - Hour [0 - 23]
+        - Time of Day [0 - 3]
+        - Day of the week [0 - 6]
+        - Weekend [0 - 1]
+        - Month [1 - 12]
+        - Day of the year [1 - 366]
+
+        Parameters
+        ----------
+        data : pandas.DataFrame
+            Input data.
+        """
+        data["Час"] = data.index.hour.astype("category")
+        data["Период времени суток"] = cls.__create_times_of_day(data).astype(
+            "category"
+        )
+        data["День недели"] = data.index.dayofweek.astype("category")
+        data["Выходной"] = (
+            data["День недели"].isin([5, 6]).astype("int").astype("category")
+        )
+        data["Месяц"] = data.index.month.astype("category")
+        data["День в году"] = data.index.dayofyear
+
+    @staticmethod
+    def __add_lag_features(data: pd.DataFrame) -> None:
+        """
+        Creates lag features related to target variable.
+
+        - Electricity consumption lag 1 day (time shift by 24 hours)
+        - Electricity consumption lag 7 days (time shift by 168 hours)
+
+        Parameters
+        ----------
+        data : pandas.DataFrame
+            Input data.
+        """
+        data["Электропотребление лаг 1 день"] = data["Электропотребление"].shift(24)
+        data["Электропотребление лаг 7 дней"] = data["Электропотребление"].shift(24 * 7)
+
+    @classmethod
+    def preprocessing_data(cls, data: pd.DataFrame) -> pd.DataFrame:
+        """
+        Preprocesses given data by rounding "Date/Time" column to nearest hour,
+        adding time features, adding lag features, dropping rows with missing values, and returning
+        preprocessed data.
+
+        Parameters
+        ----------
+        data : pandas.DataFrame
+            Input data to be preprocessed.
+
+        Returns
+        ----------
+        `~pandas.DataFrame`
+        """
+        cls.__add_time_features(data)
+        cls.__add_lag_features(data)
+        data.dropna(inplace=True)
+        data.drop(columns=["Электропотребление"], inplace=True)
+        return data
+    
+    @staticmethod
+    def prepare_data_for_saving(data) -> pd.DataFrame:
+        """
+        Prepare input data for saving to MongoDB.
+        
+        Parameters
+        ----------
+            data: input data to be prepared for saving.
+            
+        Returns
+        ----------
+        `~pandas.DataFrame`
+        """
+        data_to_save = data.reset_index().to_dict("records")
+        data_to_save = [
+            {
+                "metadata": {"report_date": datetime.now()},
+                "electricity_consumption": element["Электропотребление"],
+                "timestamp": element["Дата и время"]
+            }
+            for element in data_to_save
+        ]
+        return data_to_save
+
+   
 if __name__ == "__main__":
     root = Application()
     root.eval("tk::PlaceWindow . center")
