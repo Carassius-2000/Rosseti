@@ -14,7 +14,6 @@ from customtkinter import (
     CTkFrame,
     CTkLabel,
     CTkOptionMenu,
-    IntVar,
     StringVar
 )
 from pymongo import MongoClient
@@ -192,7 +191,7 @@ class Application(CTk):
         ----------
         `~pandas.DataFrame`
         """
-        file_path: str = cls.__fetch_file_path()
+        file_path: str = cls.__fetch_file_path("load")
         if not file_path:
             messagebox.showerror(" ", "Вы не выбрали Excel файл")
             return
@@ -201,7 +200,7 @@ class Application(CTk):
         return data
 
     @classmethod
-    def __fetch_file_path(cls) -> str:
+    def __fetch_file_path(cls, option: str) -> str:
         """
         Opens dialog to select Excel file and returns file path.
 
@@ -209,11 +208,18 @@ class Application(CTk):
         -------
         `~str`
         """
-        file_path: str = filedialog.askopenfilename(
-            title="Открыть файл",
-            filetypes=cls.__filetypes,
-            defaultextension=".xlsx"
-        )
+        if option == "load":
+            file_path: str = filedialog.askopenfilename(
+                title="Открыть файл",
+                filetypes=cls.__filetypes,
+                defaultextension=".xlsx"
+            )
+        elif option == "save":
+            file_path: str = filedialog.asksaveasfilename(
+                title="Сохранить файл",
+                filetypes=cls.__filetypes,
+                defaultextension=".xlsx"
+            )
         return file_path
 
     def __load_from_db(self) -> pd.DataFrame:
@@ -245,12 +251,12 @@ class Application(CTk):
         X = pd.concat([self.__data, future_dataframe])
         X = DataProcessor().preprocessing_data(X)
         model = joblib.load("regression.model")
-        prediction_data["Электропотребление"] = np.round(model.predict(X), 3)
+        future_dataframe["Электропотребление"] = np.round(model.predict(X), 3)
 
         self.__visualization_button.configure(state=tkinter.NORMAL)
         self.__save_to_db_button.configure(state=tkinter.NORMAL)
         self.__save_to_excel_button.configure(state=tkinter.NORMAL)
-        self.__data = prediction_data
+        self.__data = future_dataframe
         messagebox.showinfo("Информация", "Прогнозы успешно получены.")
 
     def __visualization(self) -> None:
@@ -277,16 +283,12 @@ class Application(CTk):
         Save data to an Excel file.
         Opens a file dialog to allow the user to choose a file name and location for saving data.
         """
-        file_path: str = filedialog.asksaveasfilename(
-            title="Сохранить файл",
-            filetypes=self.__filetypes,
-            defaultextension=".xlsx"
-        )
+        file_path: str = self.__fetch_file_path("save")
         if not file_path:
             messagebox.showerror(" ", "Вы не выбрали путь для сохранения Excel файла")
             return
-        self.__data.to_excel(filename, sheet_name="Лист1")
-        messagebox.showinfo(" ", f"Прогнозы успешно записаны в {filename}")
+        self.__data.to_excel(file_path, sheet_name="Лист1")
+        messagebox.showinfo(" ", f"Прогнозы успешно записаны в {file_path}")
 
     def __close_app(self) -> None:
         """
