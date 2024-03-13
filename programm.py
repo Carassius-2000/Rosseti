@@ -220,7 +220,7 @@ class Application(CTk):
         data = self.__mongo_client.load_data(
             db_name="rosseti", collection_name="electricity_consumption"
         )
-        data = DataProcessor().after_load_from_db(data)
+        data = DataProcessor().postprocess_data_from_db(data)
         return data
 
     def __get_predictions(self) -> None:
