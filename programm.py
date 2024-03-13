@@ -1,7 +1,6 @@
 import tkinter
 from datetime import datetime
 from tkinter import filedialog, messagebox
-
 import customtkinter
 import joblib
 import matplotlib.pyplot as plt
@@ -18,26 +17,13 @@ from customtkinter import (
 )
 from pymongo import MongoClient
 
+
 customtkinter.set_appearance_mode("dark")
 customtkinter.set_default_color_theme("blue")
 
 
 class Application(CTk):
-    """
-    Main application window.
-
-    Attributes
-    ----------
-    filetypes : tuple(tuple[str, str])
-        File types for opening and saving files.
-    forecast_horizons : list[str]
-        List of forecast horizons.
-    data : pandas.DataFrame
-        Temp data storage.
-    """
-
     __filetypes: tuple[tuple[str, str]] = (("Книга Excel", "*.xlsx"),)
-
     __forecast_horizons: list[str] = [
         "На один день",
         "На два дня",
@@ -181,7 +167,7 @@ class Application(CTk):
             self.__days_combobox.configure(state=tkinter.NORMAL)
             self.__get_predictions_button.configure(state=tkinter.NORMAL)
             messagebox.showinfo("Информация", "Данные успешно загружены.")
-    
+
     @classmethod
     def __load_from_excel(cls) -> pd.DataFrame:
         """
@@ -232,8 +218,7 @@ class Application(CTk):
         """
         self.__mongo_client = MongoDBDriver()
         data = self.__mongo_client.load_data(
-            db_name="rosseti", 
-            collection_name="electricity_consumption"
+            db_name="rosseti", collection_name="electricity_consumption"
         )
         data = DataProcessor().after_load_from_db(data)
         return data
@@ -251,7 +236,8 @@ class Application(CTk):
         X = pd.concat([self.__data, future_dataframe])
         X = DataProcessor().preprocessing_data(X)
         model = joblib.load("regression.model")
-        future_dataframe["Электропотребление"] = np.round(model.predict(X), 3)
+        predictions = np.round(model.predict(X), 3)
+        future_dataframe["Электропотребление"] = predictions
 
         self.__visualization_button.configure(state=tkinter.NORMAL)
         self.__save_to_db_button.configure(state=tkinter.NORMAL)
@@ -264,7 +250,8 @@ class Application(CTk):
         Visualizes data using a plot.
         """
         drawer = Drawer(self.__data)
-        drawer.line_plot(horizon_size=self.__days_combobox.get().lower())
+        forecast_horizon: int = self.__days_combobox.get().lower()
+        drawer.line_plot(horizon_size=forecast_horizon)
 
     def __save_to_db(self) -> None:
         """
@@ -272,9 +259,7 @@ class Application(CTk):
         """
         data_to_save = DataProcessor().postprocess_data_from_db(self.__data.copy())
         self.__mongo_client.prepare_data_for_saving(
-            data=data_to_save,
-            db_name="rosseti", 
-            collection_name="reports"
+            data=data_to_save, db_name="rosseti", collection_name="reports"
         )
         messagebox.showinfo(" ", "Прогнозы успешно записаны в БД")
 
@@ -301,22 +286,24 @@ class Application(CTk):
             self.destroy()
 
 
-class Drawer():
+class Drawer:
     def __init__(self, data: pd.Series):
         """
         Initialize the Drawer class.
 
         Parameters
         ----------
-        data : 
+        data :
             Data for plotting.
         """
         self.__data = data
-    
+
     def line_plot(
-        self, 
-        horizon_size: str, plot_size: tuple[int, int]=(12, 6), 
-        font_size: int=18) -> None:
+        self,
+        horizon_size: str,
+        plot_size: tuple[int, int] = (12, 6),
+        font_size: int = 18
+    ) -> None:
         """
         Visualizes data using a line plot.
 
@@ -328,9 +315,7 @@ class Drawer():
         """
         _, ax = plt.subplots(figsize=plot_size)
         ax.plot(self.__data, marker="o")
-        ax.set_title(
-            f"Прогноз {horizon_size} вперёд", fontsize=font_size
-        )
+        ax.set_title(f"Прогноз {horizon_size} вперёд", fontsize=font_size)
         ax.tick_params(axis="both", labelsize=font_size)
         ax.set_xlabel("Дата и время", fontsize=font_size)
         ax.set_ylabel("Потребление электроэнергии (МВт * ч)", fontsize=font_size)
@@ -338,24 +323,22 @@ class Drawer():
         plt.show()
 
 
-class MongoDBDriver():
+class MongoDBDriver:
     def __init__(self):
         """Initialize the MongoDBDriver class."""
         self.__connection = MongoClient(
-            serverSelectionTimeoutMS=1_000, 
-            maxPoolSize=None,
-            waitQueueTimeoutMS=1_000
+            serverSelectionTimeoutMS=1_000, maxPoolSize=None, waitQueueTimeoutMS=1_000
         )
-    
+
     def load_data(self, db_name: str, collection_name: str):
         """
         Load data from database collection.
-        
+
         Parameters
         ----------
         db_name : str
             Name of database.
-        collection_name: str 
+        collection_name: str
             Name of collection within database.
 
         Returns:
@@ -370,7 +353,7 @@ class MongoDBDriver():
     def save_data(self, db_name: str, collection_name: str, data: pd.DataFrame) -> None:
         """
         Save data to database and collection using the provided DataFrame.
-        
+
         Parameters
         ----------
         db_name : str
@@ -384,7 +367,8 @@ class MongoDBDriver():
         collection = db[collection_name]
         collection.insert_many(data)
 
-class DataProcessor():
+
+class DataProcessor:
     @staticmethod
     def postprocess_data_from_excel(data) -> pd.DataFrame:
         """
@@ -402,20 +386,20 @@ class DataProcessor():
         data.index = data.index.round("H")
         data = data.iloc[-24 * 7 :]
         return data
-    
+
     @staticmethod
     def postprocess_data_from_db(data) -> pd.DataFrame:
         """
-    	Postprocesses data retrieved from database.
+        Postprocesses data retrieved from database.
 
-    	Parameters
+        Parameters
         ----------
-    	data : data retrieved from database.
+        data : data retrieved from database.
 
         Returns
         ----------
         `~pandas.DataFrame`
-    	"""
+        """
         data = pd.DataFrame(data).sort_values(by=["timestamp"])
         data.rename(
             columns={
@@ -445,9 +429,11 @@ class DataProcessor():
         `~pandas.Series`
         """
         return pd.concat([last_day for _ in range(num_days)], ignore_index=True)
-    
+
     @classmethod
-    def make_future_dataframe(cls, forecast_horizon: int, data: pd.DataFrame) -> pd.DataFrame:
+    def make_future_dataframe(
+        cls, forecast_horizon: int, data: pd.DataFrame
+    ) -> pd.DataFrame:
         """
         Generate a future dataframe for making predictions.
 
@@ -467,15 +453,14 @@ class DataProcessor():
         prediction_range: pd.DatetimeIndex = pd.date_range(
             start=forecast_day_begin, periods=24 * forecast_horizon, freq="h"
         )
-        mask = cls.__create_mask_fill_na(
-            data["Электропотребление"].iloc[-24:], forecast_horizon
-        )
+        last_day_by_hour = data["Электропотребление"].iloc[-24:]
+        mask = cls.__create_mask_fill_na(last_day_by_hour, forecast_horizon)
         prediction_data = pd.DataFrame(
             {"Электропотребление": mask.values}, index=prediction_range
         )
         prediction_data.index.name = "Дата и время"
         return prediction_data
-        
+
     @staticmethod
     def __create_times_of_day(data: pd.DataFrame) -> pd.Series:
         """
@@ -562,16 +547,16 @@ class DataProcessor():
         data.dropna(inplace=True)
         data.drop(columns=["Электропотребление"], inplace=True)
         return data
-    
+
     @staticmethod
     def prepare_data_for_saving(data) -> pd.DataFrame:
         """
         Prepare input data for saving to MongoDB.
-        
+
         Parameters
         ----------
             data: input data to be prepared for saving.
-            
+
         Returns
         ----------
         `~pandas.DataFrame`
@@ -587,7 +572,7 @@ class DataProcessor():
         ]
         return data_to_save
 
-   
+
 if __name__ == "__main__":
     root = Application()
     root.eval("tk::PlaceWindow . center")
