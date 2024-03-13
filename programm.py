@@ -448,8 +448,8 @@ class DataProcessor:
         ----------
         `~pandas.DataFrame`
         """
-        last_available_day: pd.Series = data.index[-1]
-        forecast_day_begin: pd.Timestamp = last_available_day + pd.DateOffset(days=1)
+        last_available_day: pd.Timestamp = data.index[-1]
+        forecast_day_begin: pd.Timestamp = last_available_day + pd.DateOffset(hours=1)
         prediction_range: pd.DatetimeIndex = pd.date_range(
             start=forecast_day_begin, periods=24 * forecast_horizon, freq="h"
         )
