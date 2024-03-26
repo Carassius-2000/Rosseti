@@ -47,6 +47,7 @@ class Application(CTk):
         self.title("Прогнозирование потребления электроэнергии")
         self.resizable(0, 0)
         self.geometry("1240x250")
+        self.wm_iconbitmap("prediction.ico")
         self.toplevel_window = None
 
         self.__data = None
