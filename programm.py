@@ -16,6 +16,7 @@ from customtkinter import (
     StringVar
 )
 from pymongo import MongoClient
+from pymongo.errors import ServerSelectionTimeoutError
 
 
 customtkinter.set_appearance_mode("dark")
@@ -180,7 +181,7 @@ class Application(CTk):
         """
         file_path: str = cls.__fetch_file_path("load")
         if not file_path:
-            messagebox.showerror(" ", "Вы не выбрали Excel файл")
+            messagebox.showerror("Ошибка", "Вы не выбрали Excel файл")
             return
         data: pd.DataFrame = pd.read_excel(file_path, index_col=0)
         data = DataProcessor().postprocess_data_from_excel(data)
@@ -221,6 +222,14 @@ class Application(CTk):
         data = self.__mongo_client.load_data(
             db_name="rosseti", collection_name="electricity_consumption"
         )
+        try:
+            data = pd.DataFrame(data)
+        except ServerSelectionTimeoutError:
+            messagebox.showerror(
+                "Ошибка",
+                "Не удалось загрузить данные из БД.\nПроверьте подключение к серверу.",
+            )
+            return
         data = DataProcessor().postprocess_data_from_db(data)
         return data
 
@@ -258,11 +267,10 @@ class Application(CTk):
         """
         Save the data to a MongoDB database.
         """
-        data_to_save = DataProcessor().postprocess_data_from_db(self.__data.copy())
-        self.__mongo_client.prepare_data_for_saving(
+        data_to_save = DataProcessor().prepare_data_for_saving(self.__data.copy())
+        self.__mongo_client.save_data(
             data=data_to_save, db_name="rosseti", collection_name="reports"
         )
-        messagebox.showinfo(" ", "Прогнозы успешно записаны в БД")
 
     def __save_to_excel(self) -> None:
         """
@@ -271,10 +279,12 @@ class Application(CTk):
         """
         file_path: str = self.__fetch_file_path("save")
         if not file_path:
-            messagebox.showerror(" ", "Вы не выбрали путь для сохранения Excel файла")
+            messagebox.showerror(
+                "Ошибка", "Вы не выбрали путь для сохранения Excel файла"
+            )
             return
         self.__data.to_excel(file_path, sheet_name="Лист1")
-        messagebox.showinfo(" ", f"Прогнозы успешно записаны в {file_path}")
+        messagebox.showinfo("Информация", f"Прогнозы успешно записаны в {file_path}")
 
     def __close_app(self) -> None:
         """
@@ -366,7 +376,15 @@ class MongoDBDriver:
         """
         db = self.__connection[db_name]
         collection = db[collection_name]
-        collection.insert_many(data)
+        try:
+            collection.insert_many(data)
+        except ServerSelectionTimeoutError:
+            messagebox.showerror(
+                "Ошибка",
+                "Не удалось записать данные в БД.\nПроверьте подключение к серверу.",
+            )
+        else:
+            messagebox.showinfo("Информация", "Прогнозы успешно записаны в БД")
 
 
 class DataProcessor:
