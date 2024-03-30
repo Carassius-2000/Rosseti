@@ -268,6 +268,8 @@ class Application(CTk):
         Save the data to a MongoDB database.
         """
         data_to_save = DataProcessor().prepare_data_for_saving(self.__data.copy())
+        if self.__mongo_client is None:
+            self.__mongo_client = MongoDBDriver() 
         self.__mongo_client.save_data(
             data=data_to_save, db_name="rosseti", collection_name="reports"
         )
