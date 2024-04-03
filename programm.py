@@ -171,7 +171,7 @@ class Application(CTk):
             messagebox.showinfo("Информация", "Данные успешно загружены.")
 
     @classmethod
-    def __load_from_excel(cls) -> pd.DataFrame:
+    def __load_from_excel(cls):
         """
         Loads data from Excel.
 
@@ -183,7 +183,7 @@ class Application(CTk):
         if not file_path:
             messagebox.showerror("Ошибка", "Вы не выбрали Excel файл")
             return
-        data: pd.DataFrame = pd.read_excel(file_path, index_col=0)
+        data = pd.read_excel(file_path, index_col=0)
         data = DataProcessor().postprocess_data_from_excel(data)
         return data
 
@@ -210,7 +210,7 @@ class Application(CTk):
             )
         return file_path
 
-    def __load_from_db(self) -> pd.DataFrame:
+    def __load_from_db(self):
         """
         Get data from MongoDB
 
@@ -227,7 +227,7 @@ class Application(CTk):
         except ServerSelectionTimeoutError:
             messagebox.showerror(
                 "Ошибка",
-                "Не удалось загрузить данные из БД.\nПроверьте подключение к серверу.",
+                "Не удалось загрузить данные из БД.\nПроверьте подключение к серверу."
             )
             return
         data = DataProcessor().postprocess_data_from_db(data)
@@ -300,7 +300,7 @@ class Application(CTk):
 
 
 class Drawer:
-    def __init__(self, data: pd.Series):
+    def __init__(self, data):
         """
         Initialize the Drawer class.
 
@@ -363,7 +363,7 @@ class MongoDBDriver:
         data = collection.find(limit=24 * 7, sort=[("timestamp", -1)])
         return data
 
-    def save_data(self, db_name: str, collection_name: str, data: pd.DataFrame) -> None:
+    def save_data(self, db_name: str, collection_name: str, data) -> None:
         """
         Save data to database and collection using the provided DataFrame.
 
@@ -383,7 +383,7 @@ class MongoDBDriver:
         except ServerSelectionTimeoutError:
             messagebox.showerror(
                 "Ошибка",
-                "Не удалось записать данные в БД.\nПроверьте подключение к серверу.",
+                "Не удалось записать данные в БД.\nПроверьте подключение к серверу."
             )
         else:
             messagebox.showinfo("Информация", "Прогнозы успешно записаны в БД")
@@ -391,7 +391,7 @@ class MongoDBDriver:
 
 class DataProcessor:
     @staticmethod
-    def postprocess_data_from_excel(data) -> pd.DataFrame:
+    def postprocess_data_from_excel(data):
         """
         Postprocess data from Excel file.
 
@@ -409,7 +409,7 @@ class DataProcessor:
         return data
 
     @staticmethod
-    def postprocess_data_from_db(data) -> pd.DataFrame:
+    def postprocess_data_from_db(data):
         """
         Postprocesses data retrieved from database.
 
@@ -434,7 +434,7 @@ class DataProcessor:
         return data
 
     @staticmethod
-    def __create_mask_fill_na(last_day: pd.DataFrame, num_days: int) -> pd.Series:
+    def __create_mask_fill_na(last_day, num_days: int):
         """
         Creates a mask to fill missing values in a DataFrame with data from last available day.
 
@@ -452,9 +452,7 @@ class DataProcessor:
         return pd.concat([last_day for _ in range(num_days)], ignore_index=True)
 
     @classmethod
-    def make_future_dataframe(
-        cls, forecast_horizon: int, data: pd.DataFrame
-    ) -> pd.DataFrame:
+    def make_future_dataframe(cls, forecast_horizon: int, data):
         """
         Generate a future dataframe for making predictions.
 
@@ -469,9 +467,9 @@ class DataProcessor:
         ----------
         `~pandas.DataFrame`
         """
-        last_available_day: pd.Timestamp = data.index[-1]
-        forecast_day_begin: pd.Timestamp = last_available_day + pd.DateOffset(hours=1)
-        prediction_range: pd.DatetimeIndex = pd.date_range(
+        last_available_day = data.index[-1]
+        forecast_day_begin = last_available_day + pd.DateOffset(hours=1)
+        prediction_range = pd.date_range(
             start=forecast_day_begin, periods=24 * forecast_horizon, freq="h"
         )
         last_day_by_hour = data["Электропотребление"].iloc[-24:]
@@ -483,7 +481,7 @@ class DataProcessor:
         return prediction_data
 
     @staticmethod
-    def __create_times_of_day(data: pd.DataFrame) -> pd.Series:
+    def __create_times_of_day(data):
         """
         Creates a column for time of day.
         Rows are grouped by hours.
@@ -504,7 +502,7 @@ class DataProcessor:
         return pd.cut(data.index.hour, bins=4, labels=range(4))
 
     @classmethod
-    def __add_time_features(cls, data: pd.DataFrame) -> None:
+    def __add_time_features(cls, data) -> None:
         """
         Adds time-related features to input data.
 
@@ -532,7 +530,7 @@ class DataProcessor:
         data["День в году"] = data.index.dayofyear
 
     @staticmethod
-    def __add_lag_features(data: pd.DataFrame) -> None:
+    def __add_lag_features(data) -> None:
         """
         Creates lag features related to target variable.
 
@@ -548,7 +546,7 @@ class DataProcessor:
         data["Электропотребление лаг 7 дней"] = data["Электропотребление"].shift(24 * 7)
 
     @classmethod
-    def preprocessing_data(cls, data: pd.DataFrame) -> pd.DataFrame:
+    def preprocessing_data(cls, data):
         """
         Preprocesses given data by rounding "Date/Time" column to nearest hour,
         adding time features, adding lag features, dropping rows with missing values, and returning
@@ -570,7 +568,7 @@ class DataProcessor:
         return data
 
     @staticmethod
-    def prepare_data_for_saving(data) -> pd.DataFrame:
+    def prepare_data_for_saving(data):
         """
         Prepare input data for saving to MongoDB.
 
