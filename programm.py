@@ -4,7 +4,6 @@ from tkinter import filedialog, messagebox
 import customtkinter
 import joblib
 import matplotlib.pyplot as plt
-import numpy as np
 import pandas as pd
 from customtkinter import (
     CTk,
@@ -216,7 +215,7 @@ class Application(CTk):
 
         Returns
         ----------
-        `~pandas.DataFrame`: Загруженные данные из MongoDB.
+        `~pandas.DataFrame`
         """
         self.__mongo_client = MongoDBDriver()
         data = self.__mongo_client.load_data(
@@ -246,7 +245,7 @@ class Application(CTk):
         X = pd.concat([self.__data, future_dataframe])
         X = DataProcessor().preprocessing_data(X)
         model = joblib.load("regression.model")
-        predictions = np.round(model.predict(X), 3)
+        predictions = model.predict(X).round(3)
         future_dataframe["Электропотребление"] = predictions
 
         self.__visualization_button.configure(state=tkinter.NORMAL)
@@ -354,7 +353,7 @@ class MongoDBDriver:
         collection_name: str
             Name of collection within database.
 
-        Returns:
+        Returns
         ----------
         `~pymongo.cursor.Cursor`
         """
@@ -445,7 +444,7 @@ class DataProcessor:
         num_days : int
             Number of days to fill missing values.
 
-        Returns:
+        Returns
         ----------
         `~pandas.Series`
         """
